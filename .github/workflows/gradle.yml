@@ -13,6 +13,12 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# Only one run per branch/PR at a time: superseded PR runs are cancelled to
+# save Actions minutes, while runs on main always run to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
 
@@ -22,6 +28,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
+
     - name: Set up JDK 21
       uses: actions/setup-java@v6
       with:
@@ -29,10 +36,28 @@ jobs:
         distribution: 'temurin'
 
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v6 
+      uses: gradle/actions/setup-gradle@v6
 
+    - name: Run unit tests
+      run: ./gradlew test
+
+    - name: Run integration tests
+      run: ./gradlew integrationTest
+
+    # The ./gradlew build also runs the tests via check, but Gradle skips up-to-date tasks
     - name: Build with Gradle Wrapper
       run: ./gradlew build
+
+    # Keep Gradle's HTML test reports (unit and integration) available for
+    # debugging when a run goes red; nothing is uploaded on success.
+    - name: Upload test reports on failure
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: test-reports
+        path: build/reports/tests/
+        if-no-files-found: ignore
+        retention-days: 7
 
   dependency-submission:
 
