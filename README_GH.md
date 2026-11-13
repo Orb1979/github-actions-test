@@ -1,4 +1,4 @@
-# github-actions-test
+# Required github / repo settings
 
 ```
 # you might need to request additional scope, so you are allowed to push workflows
@@ -9,31 +9,37 @@ gh auth refresh --hostname github.com --scopes workflow
 github repo > settings > advanced security > Dependency graph > enable
 ```
 
-
+# Workflow CI
+**ci.yml** — runs on every push to main and every PR to main
 
 ```
-gradle.yml
-- Set up JDK 21
-- Setup Gradle
-- Run unit tests
-- Run integration tests
-- build project
-- Upload test reports on failure
-- dependency submission
+- Set up JDK 21 (Temurin) + Gradle (with dependency caching)
+- Run unit tests         (./gradlew test)
+- Run integration tests  (./gradlew integrationTest) (Testcontainers -> needs Docker, no docker-compose)
+- Build                  (./gradlew build) (tests already ran, Gradle skips up-to-date tasks)
+- Upload test reports as artifact on failure (7-day retention)
+- Superseded PR runs are cancelled
+- dependency-submission job -> dependency graph -> Dependabot alerts
 ```
 
-The dependency-submission action:
-1. Runs Gradle to resolve the project's dependencies.
-2. Collects the resolved dependency information, including transitive dependencies.
-3. Generates a dependency graph snapshot.
-4. Submits that snapshot to GitHub.
-   It does this without actually building and testing your application.
-   GitHub+1
+# Workflow Publish image (CD)
+**publish-image.yml** — runs on push to main (`latest`) and on `v*` tags (`x.y.z`)
 
-You can find it in: Repository → Insights → Dependency graph
+```
+Step  Implementation
+- ./gradlew check — tests must pass before anything is published
+- docker login to ghcr.io (GITHUB_TOKEN, permission packages:write)
+- Compute image ref: ghcr.io/<owner>/rest-api-books:<latest|x.y.z> (GHCR only accepts lowercase image names)
+- Gradle bootBuildImage --publishImage — Cloud Native Buildpacks image, pushed to GHCR (GitHub Packages)
+```
 
-Suppose a vulnerability is discovered in a library you're using
-GitHub can compare your dependency graph against its vulnerability database.
-It can then notify you that your project uses a vulnerable version.
+Note: the first push creates a *private* package; flip visibility in the
+package settings if it should be pullable publicly.
 
-Depending on the dependency and configuration, Dependabot can also suggest or create updates.
+# todo
+```
+Tag image using Git commit SHA
+Update deployment.yaml with the new image tag
+Commit and push GitOps repository
+Argo CD deploys to local K3s (Rancher)
+```
